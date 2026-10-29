@@ -117,7 +117,7 @@ namespace FolderCleaner
     {
         // ---- 控件 ----
         DarkTextBox txtDir;
-        Button btnBrowse, btnScan, btnStop;
+        Button btnBrowse, btnScan;
         CheckBox chkAI, chkSize;
         ComboBox cboDepth;
         // AI 配置（存放于齿轮弹窗，值存成员字段，供扫描时读取）
@@ -190,7 +190,7 @@ namespace FolderCleaner
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9F);
             ConfigFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "配置.ini");
-            ResultFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "目录分析清理工具_results.txt");
+            ResultFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "保存结果.txt");
             KnownMapFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "识别库.txt");
             BuildUI();
             LoadConfig();
@@ -319,8 +319,8 @@ namespace FolderCleaner
                         AddNodeInternal(item);
                     }
                     tree.EndUpdate();
-                    btnScan.Enabled = true; btnStop.Enabled = false;
-                    if (!string.IsNullOrEmpty(root)) txtDir.Text = root;
+                    btnScan.Text = "开始分析";
+                    if (string.IsNullOrEmpty(txtDir.Text) && !string.IsNullOrEmpty(root)) txtDir.Text = root;
                     long total = 0; int chk = 0;
                     foreach (var it in items) { total += it.Size; if (it.Checked) chk++; }
                     lblStatus.Text = string.Format("已加载上次分析结果：{0} 个文件夹，合计 {1}（上次勾选 {2} 项）", items.Count, FormatSize(total), chk);
@@ -449,7 +449,7 @@ namespace FolderCleaner
                     .ToList();
                 var sb = new StringBuilder();
                 foreach (var n in names) sb.AppendLine(n + " => ");
-                var outFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "目录分析清理工具_导出目录.txt");
+                var outFile = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "导出未识别.txt");
                 File.WriteAllText(outFile, sb.ToString(), new UTF8Encoding(false));
                 if (names.Count == 0)
                 {
@@ -475,12 +475,17 @@ namespace FolderCleaner
             btnBrowse = new Button { Text = "浏览…", AutoSize = true, Margin = new Padding(0, 0, 4, 0) };
             btnBrowse.Click += (s, e) => { using (var d = new FolderBrowserDialog()) { string cur = txtDir.Text.Trim(); if (Directory.Exists(cur)) d.SelectedPath = cur; if (d.ShowDialog() == DialogResult.OK) txtDir.Text = d.SelectedPath; } };
             top.Controls.Add(btnBrowse);
-            btnScan = new Button { Text = "开始分析", AutoSize = true, Margin = new Padding(0, 0, 4, 0) };
-            btnScan.Click += (s, e) => StartScan();
+            btnScan = new Button { Text = "开始分析", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
+            btnScan.Click += (s, e) =>
+            {
+                if (btnScan.Text == "停止")
+                {
+                    if (scanCts != null) scanCts.Cancel();
+                    if (aiCts != null) aiCts.Cancel();
+                }
+                else StartScan();
+            };
             top.Controls.Add(btnScan);
-            btnStop = new Button { Text = "停止", AutoSize = true, Enabled = false, Margin = new Padding(0, 0, 8, 0) };
-            btnStop.Click += (s, e) => { if (scanCts != null) scanCts.Cancel(); if (aiCts != null) aiCts.Cancel(); };
-            top.Controls.Add(btnStop);
             cboDepth = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(0, 3, 4, 0) };
             cboDepth.Items.AddRange(new object[] { "二级目录", "三级目录", "四级目录", "全部目录" });
             cboDepth.SelectedIndex = 0; // 默认二级
@@ -525,7 +530,7 @@ namespace FolderCleaner
             var btnSaveRes = new Button { Text = "保存结果", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
             btnSaveRes.Click += (s, e) => SaveResultsNow();
             bar.Controls.Add(btnSaveRes);
-            var btnExport = new Button { Text = "导出未识别目录", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
+            var btnExport = new Button { Text = "导出未识别", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
             btnExport.Click += (s, e) => ExportDirs();
             bar.Controls.Add(btnExport);
 
@@ -550,10 +555,69 @@ namespace FolderCleaner
                 BackColor = C_EDGE
             };
             treeHost.Controls.Add(tree);
+            TreeNode lastCheckNode = null;
             tree.AfterCheck += (s, e) =>
             {
                 var item = e.Node.Tag as FolderItem;
                 if (item != null) { item.Checked = e.Node.Checked; UpdateSel(); }
+            };
+            // Shift 范围勾选：Shift=含子目录递归；Shift+Ctrl=仅同级兄弟范围
+            tree.NodeMouseClick += (s, e) =>
+            {
+                if ((Control.ModifierKeys & Keys.Shift) == 0 || lastCheckNode == null || lastCheckNode == e.Node)
+                {
+                    lastCheckNode = e.Node;
+                    return;
+                }
+                bool sameLevel = (Control.ModifierKeys & Keys.Control) != 0;
+                bool val = e.Node.Checked;
+                System.Action<TreeNode> setCheck = null;
+                setCheck = (n) =>
+                {
+                    n.Checked = val;
+                    var it = n.Tag as FolderItem;
+                    if (it != null) it.Checked = val;
+                    if (!sameLevel) foreach (TreeNode c in n.Nodes) setCheck(c);
+                };
+                tree.BeginUpdate();
+                if (sameLevel && lastCheckNode.Parent == e.Node.Parent)
+                {
+                    // 仅同级兄弟范围
+                    var cols = lastCheckNode.Parent != null ? lastCheckNode.Parent.Nodes : tree.Nodes;
+                    var sibs = new List<TreeNode>();
+                    foreach (TreeNode n in cols) sibs.Add(n);
+                    int i1 = sibs.IndexOf(lastCheckNode);
+                    int i2 = sibs.IndexOf(e.Node);
+                    if (i1 > i2) { int t = i1; i1 = i2; i2 = t; }
+                    for (int i = i1; i <= i2; i++) setCheck(sibs[i]);
+                }
+                else
+                {
+                    // 全范围（含子目录递归）
+                    var all = new List<TreeNode>();
+                    var st = new Stack<TreeNodeCollection>();
+                    st.Push(tree.Nodes);
+                    while (st.Count > 0)
+                    {
+                        var cols = st.Pop();
+                        var list = new List<TreeNode>();
+                        foreach (TreeNode n in cols) list.Add(n);
+                        list.Reverse();
+                        foreach (TreeNode n in list)
+                        {
+                            all.Add(n);
+                            if (n.IsExpanded) st.Push(n.Nodes);
+                        }
+                    }
+                    int i1 = all.IndexOf(lastCheckNode);
+                    int i2 = all.IndexOf(e.Node);
+                    if (i1 < 0 || i2 < 0) { tree.EndUpdate(); lastCheckNode = e.Node; return; }
+                    if (i1 > i2) { int t = i1; i1 = i2; i2 = t; }
+                    for (int i = i1; i <= i2; i++) setCheck(all[i]);
+                }
+                tree.EndUpdate();
+                UpdateSel();
+                lastCheckNode = e.Node;
             };
 
             // 右键菜单：修改识别库条目
@@ -694,11 +758,14 @@ namespace FolderCleaner
             tree.MouseLeave += (s, e) => { lastTipNode = null; tipForm.Hide(); };
 
             // ---------- 底部状态 ----------
-            var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, AutoSize = true, Padding = new Padding(8, 2, 8, 4), WrapContents = false };
-            lblStatus = new Label { Text = "就绪。选择目录后点击“开始分析”。", AutoSize = true, Margin = new Padding(0, 3, 20, 0) };
+            var bottom = new Panel { Dock = DockStyle.Bottom, Height = 26, Padding = new Padding(8, 2, 8, 2), BackColor = C_BG };
+            lblStatus = new Label { Text = "就绪。选择目录后开始分析。", AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(0, 5, 0, 0) };
             bottom.Controls.Add(lblStatus);
-            lblSel = new Label { Text = "已选 0 项 / 0 MB", AutoSize = true, Margin = new Padding(0, 3, 0, 0) };
+            lblSel = new Label { Text = "已选 0 项 / 0 MB", AutoSize = true, Dock = DockStyle.Right, Padding = new Padding(0, 5, 0, 0) };
             bottom.Controls.Add(lblSel);
+            var lblHint = new Label { Text = "[Shift=范围含子目录  Shift+Ctrl=仅同级]", AutoSize = true, Dock = DockStyle.Right, ForeColor = C_FG_DIM, Padding = new Padding(20, 5, 0, 0) };
+            bottom.Controls.Add(lblHint);
+            lblStatus.BringToFront();
             Controls.Add(treeHost);
             Controls.Add(bottom);
             Controls.Add(bar);
@@ -922,7 +989,7 @@ namespace FolderCleaner
         // ---- 性能测试探针 ----
         public void SetDirProbe(string d) { txtDir.Text = d; }
         public void TriggerScanProbe() { StartScan(); }
-        public bool IsScanDoneProbe() { return btnScan.Enabled && items.Count > 0; }
+        public bool IsScanDoneProbe() { return btnScan.Text == "开始分析" && items.Count > 0; }
         public int ItemCountProbe() { return items.Count; }
         public string StatusProbe() { return lblStatus.Text; }
         // ---- 布局测试探针 ----
@@ -938,7 +1005,6 @@ namespace FolderCleaner
             ReadUninstall(@"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall", false, list);
             ReadUninstall(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", true, list);
             installedApps = list;
-            SafeUi(() => lblStatus.Text = "已加载 " + list.Count + " 个已安装软件。");
         }
 
         void ReadUninstall(string key, bool hkcu, List<Tuple<string, string, string>> list)
@@ -979,7 +1045,10 @@ namespace FolderCleaner
                 Dlg.Show("请先选择一个有效目录", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            SaveConfig(); // 点击“开始分析”后，把主界面所有配置（目录/扫描子目录/统计大小/AI开关）写入配置文件
+            lblStatus.Text = "正在准备扫描: " + path;
+            lblStatus.Refresh();
+            Application.DoEvents();
+            SaveConfig();
             items.Clear(); relMap.Clear();
             object tmp;
             while (renderQueue.TryDequeue(out tmp)) { }
@@ -987,7 +1056,7 @@ namespace FolderCleaner
             tree.Nodes.Clear();
             tree.EndUpdate();
             UpdateSel();
-            btnScan.Enabled = false; btnStop.Enabled = true;
+            btnScan.Text = "停止";
             scanDone = false;
             // 取消旧扫描/AI 任务，避免旧任务状态栏覆盖新任务
             if (scanCts != null) scanCts.Cancel();
@@ -1063,10 +1132,10 @@ namespace FolderCleaner
                     try { mt = Directory.GetLastWriteTime(d); } catch { }
                     agg[rel] = Tuple.Create(calcSize ? size : -1, cnt, mt); // 不统计大小：标记 -1，界面显示 "--"
                     if (rel == "") rootSize = size;
-                    if (progressSw.ElapsedMilliseconds > 250)
+                    if (progressSw.ElapsedMilliseconds > 300)
                     {
                         progressSw.Restart();
-                        SafeUi(() => lblStatus.Text = calcSize ? "正在统计大小… " + d : "正在分析目录结构… " + d);
+                        SafeUi(() => lblStatus.Text = "正在扫描: " + d);
                     }
                 }
             }
@@ -1100,17 +1169,12 @@ namespace FolderCleaner
                     if (cat == "unknown") unknownList.Add(item);
                     renderQueue.Enqueue(item);
                     pushed++;
-                    if (progressSw.ElapsedMilliseconds > 250)
-                    {
-                        progressSw.Restart();
-                        SafeUi(() => lblStatus.Text = "正在分析… 已发现 " + pushed + " 个文件夹");
-                    }
                     if (maxDepth < 0 || depth + 1 < maxDepth) stack.Push(new KeyValuePair<string, int>(sub, depth + 1));
                 }
             }
             // 完成标记（null），UI 渲染完队列后收尾
             renderQueue.Enqueue(null);
-            SafeUi(() => lblStatus.Text = "扫描完成，正在渲染列表… " + pushed + " 个文件夹");
+            SafeUi(() => lblStatus.Text = "正在渲染列表… " + pushed + " 个文件夹");
 
             // 第三步：AI 分析未知目录（勾选时）—— 一次性把所有未知目录发给 AI，返回后统一匹配
             if (chkAI != null && chkAI.Checked && unknownList.Count > 0)
@@ -1119,6 +1183,7 @@ namespace FolderCleaner
                 string cfgKey = (aiApiKey ?? "").Trim();
                 string cfgModel = (aiModel ?? "").Trim();
                 var list = unknownList.ToList();
+                SafeUi(() => lblStatus.Text = "正在启动 AI 分析… 共 " + list.Count + " 个未知目录");
                 SafeUi(() => Task.Run(() => RunAI(list, cfgUrl, cfgKey, cfgModel, aiCts.Token)));
             }
         }
@@ -1126,6 +1191,14 @@ namespace FolderCleaner
         // UI 线程：每 80ms 批量渲染队列
         void RenderBatch()
         {
+            // 用户点了停止：丢弃队列剩余，恢复按钮
+            if (scanCts != null && scanCts.IsCancellationRequested)
+            {
+                object tmp; while (renderQueue.TryDequeue(out tmp)) { }
+                btnScan.Text = "开始分析";
+                lblStatus.Text = "已停止";
+                return;
+            }
             if (renderQueue.IsEmpty) return;
             var batch = new List<FolderItem>();
             bool doneMark = false;
@@ -1148,13 +1221,17 @@ namespace FolderCleaner
             }
             if (doneMark)
             {
-                btnScan.Enabled = true; btnStop.Enabled = false;
-                RebuildTree(); // 扫描完成后统一重建树，确保父子关系正确
+                RebuildTree();
                 long total = 0;
                 foreach (var it in items) total += it.Size;
-                lblStatus.Text = string.Format("扫描完成：{0} 个文件夹，合计 {1}", items.Count, FormatSize(total));
                 UpdateSel();
                 SaveResults();
+                bool aiRunning = chkAI != null && chkAI.Checked && items.Exists(i => i.Source == "unknown");
+                if (!aiRunning)
+                {
+                    btnScan.Text = "开始分析";
+                    lblStatus.Text = string.Format("扫描完成：{0} 个文件夹，合计 {1}", items.Count, FormatSize(total));
+                }
             }
         }
 
@@ -1186,6 +1263,7 @@ namespace FolderCleaner
                 node.Text = string.Format("{0}   [{1}]{2}  {3}", Path.GetFileName(item.Path),
                     SourceTag(item), item.Owner, FormatSize(item.Size));
                 node.ForeColor = CategoryColor(item.Category);
+                node.Checked = item.Checked;
                 item.Node = node;
             }
             tree.EndUpdate();
@@ -1210,6 +1288,7 @@ namespace FolderCleaner
             node.Text = string.Format("{0}   [{1}]{2}  {3}", Path.GetFileName(item.Path),
                 SourceTag(item), item.Owner, FormatSize(item.Size));
             node.ForeColor = CategoryColor(item.Category);
+            node.Checked = item.Checked;
             item.Node = node;
         }
 
@@ -1406,15 +1485,15 @@ namespace FolderCleaner
                         }
                     }
                     tree.EndUpdate();
-                    tree.Invalidate(); // 深色自绘树需重绘刷新
-                    string msg = "AI 分析完成：识别 " + updated + " 个，未识别 " + (unknownList.Count - updated) + " 个。";
+                    btnScan.Text = "开始分析";
+                    string msg = "扫描完成，AI 识别 " + updated + " 个，未识别 " + (unknownList.Count - updated) + " 个。";
                     if (failCount > 0) msg += "（请求失败，请检查 Key/模型/网络）";
                     lblStatus.Text = msg;
                 });
             }
             catch (Exception ex)
             {
-                SafeUi(() => lblStatus.Text = "AI 分析出错: " + ex.Message);
+                SafeUi(() => { btnScan.Text = "开始分析"; lblStatus.Text = "AI 分析出错: " + ex.Message; });
             }
         }
 
