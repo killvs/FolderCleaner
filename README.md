@@ -1,10 +1,27 @@
-目录分析清理工具 — Windows目录智能分析创建者与磁盘清理助手
+FolderCleaner
+
+\#目录分析清理工具 — Windows目录智能分析创建者与磁盘清理助手
 是一款轻量级 Windows 桌面应用，帮助你分析和清理文件夹。它通过内置识别库、注册表信息和可选的 AI 大模型分析，自动标注每个文件夹属于哪个软件、是否可安全删除，并按 "在用 / 残留 / 缓存 / 未知" 分级，让你安全释放磁盘空间。单文件 exe，无需安装。
 
 
 
-Directory Analysis and Cleanup Tool — Windows Directory Smart Analyzer & Disk Cleanup Assistant
-A lightweight Windows desktop application that helps you analyze and clean up folders. Leveraging its built-in recognition library, registry information and optional AI large model analysis, it automatically marks which software each folder belongs to and whether it can be safely deleted. It classifies items into four tiers: ‌In Use / Leftover / Cache / Unknown‌, enabling you to free up disk space safely. It is a single-file EXE that requires no installation.
+!\[软件截图](FolderCleaner.png)
 
 
-![软件截图](SnowShot.png)
+
+MenuFontTool
+
+\# 右键菜单字体调节器 · 简介
+
+一个绿色的 Windows 小工具：\*\*给右键菜单换字体、调字号，顺带把菜单汉化成中文\*\*。双击即用，不安装、不写系统目录、随时可还原。
+
+\- 文件：`MenuFontTool.exe`（60 KB，单文件，可拷到任何地方）
+
+\- 依赖：本机已安装 \[Nilesoft Shell](https://nilesoft.org)（免费开源的右键菜单增强，测试版本 v1.9.18）
+
+\- 环境：Windows 10 / 11 x64
+
+
+
+!\[软件截图](MenuFontTool.png)
+
