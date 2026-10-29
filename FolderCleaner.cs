@@ -1094,7 +1094,8 @@ namespace FolderCleaner
                         var cur = walk.Pop();
                         var d = cur.Key; var depth = cur.Value;
                         dirsAll.Add(d);
-                        if (maxDepth < 0 || depth < maxDepth)
+                        // 统计大小永远递归全量（真实大小），展示层级由第二步 maxDepth 控制
+                        if (calcSize || maxDepth < 0 || depth < maxDepth)
                         {
                             try { foreach (var sub in Directory.EnumerateDirectories(d)) walk.Push(new KeyValuePair<string, int>(sub, depth + 1)); } catch { }
                         }
