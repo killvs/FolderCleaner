@@ -468,14 +468,27 @@ namespace FolderCleaner
         void BuildUI()
         {
             // ---------- 行1：目录选择（FlowLayoutPanel，固定控件尺寸）----------
-            var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 6, 8, 2), WrapContents = false };
+            var top = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 6, 8, 3), WrapContents = false, BackColor = C_BG };
             top.Controls.Add(new Label { Text = "分析目录:", AutoSize = true, Margin = new Padding(0, 5, 4, 0) });
             txtDir = new DarkTextBox { Width = 640, Margin = new Padding(0, 2, 4, 0) };
             top.Controls.Add(txtDir);
             btnBrowse = new Button { Text = "浏览…", AutoSize = true, Margin = new Padding(0, 0, 4, 0) };
             btnBrowse.Click += (s, e) => { using (var d = new FolderBrowserDialog()) { string cur = txtDir.Text.Trim(); if (Directory.Exists(cur)) d.SelectedPath = cur; if (d.ShowDialog() == DialogResult.OK) txtDir.Text = d.SelectedPath; } };
             top.Controls.Add(btnBrowse);
-            btnScan = new Button { Text = "开始分析", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
+            cboDepth = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(0, 3, 4, 0) };
+            cboDepth.Items.AddRange(new object[] { "二级目录", "三级目录", "四级目录", "全部目录" });
+            cboDepth.SelectedIndex = 0;
+            top.Controls.Add(cboDepth);
+            chkSize = new CheckBox { Text = "统计大小", AutoSize = true, Checked = true, Margin = new Padding(0, 5, 4, 0) };
+            top.Controls.Add(chkSize);
+            chkAI = new CheckBox { Text = "AI 分析未知目录", AutoSize = true, Margin = new Padding(0, 5, 8, 0) };
+            top.Controls.Add(chkAI);
+            var btnAiCfg = new Button { Text = "⚙", Width = 30, Height = 24, Margin = new Padding(0, 3, 6, 0), FlatStyle = FlatStyle.System };
+            btnAiCfg.Click += (s, e) => ShowAiConfigDialog();
+            top.Controls.Add(btnAiCfg);
+            var aiTip = new ToolTip();
+            aiTip.SetToolTip(btnAiCfg, "AI 配置");
+            btnScan = new Button { Text = "开始分析", AutoSize = true, Margin = new Padding(12, 0, 0, 0) };
             btnScan.Click += (s, e) =>
             {
                 if (btnScan.Text == "停止")
@@ -486,33 +499,17 @@ namespace FolderCleaner
                 else StartScan();
             };
             top.Controls.Add(btnScan);
-            cboDepth = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(0, 3, 4, 0) };
-            cboDepth.Items.AddRange(new object[] { "二级目录", "三级目录", "四级目录", "全部目录" });
-            cboDepth.SelectedIndex = 0; // 默认二级
-            top.Controls.Add(cboDepth);
-            chkSize = new CheckBox { Text = "统计大小", AutoSize = true, Checked = true, Margin = new Padding(0, 5, 4, 0) };
-            top.Controls.Add(chkSize);
-            // AI 开关 + 配置齿轮按钮
-            chkAI = new CheckBox { Text = "AI 分析未知目录", AutoSize = true, Margin = new Padding(0, 5, 8, 0) };
-            top.Controls.Add(chkAI);
-            var btnAiCfg = new Button { Text = "⚙", Width = 30, Height = 24, Margin = new Padding(0, 3, 6, 0), FlatStyle = FlatStyle.System };
-            btnAiCfg.Click += (s, e) => ShowAiConfigDialog();
-            top.Controls.Add(btnAiCfg);
-            var aiTip = new ToolTip();
-            aiTip.SetToolTip(btnAiCfg, "AI 配置");
 
             // ---------- 行3：操作栏 ----------
-            var bar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 2, 8, 2), WrapContents = false };
+            var bar = new FlowLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(8, 2, 8, 3), WrapContents = false, BackColor = C_BG };
             btnAll = MkBtn("全选", (s, e) => { lblStatus.Text = "正在全选..."; lblStatus.Refresh(); SetAll(true, false); }); bar.Controls.Add(btnAll);
             btnNone = MkBtn("全不选", (s, e) => { lblStatus.Text = "正在全不选..."; lblStatus.Refresh(); SetAll(false, false); }); bar.Controls.Add(btnNone);
             btnInvert = MkBtn("反选", (s, e) => { lblStatus.Text = "正在反选..."; lblStatus.Refresh(); InvertAll(); }); bar.Controls.Add(btnInvert);
             btnDeletable = MkBtn("仅选可删", (s, e) => { lblStatus.Text = "正在仅选可删..."; lblStatus.Refresh(); SetAll(true, true); }); bar.Controls.Add(btnDeletable);
+            bar.Controls.Add(new Panel { Width = 1, Height = 22, BackColor = C_EDGE, Margin = new Padding(8, 1, 8, 0) });
             btnExpand = MkBtn("展开全部", (s, e) => { lblStatus.Text = "正在展开全部..."; lblStatus.Refresh(); ExpandAll(true); }); bar.Controls.Add(btnExpand);
             btnCollapse = MkBtn("折叠全部", (s, e) => { lblStatus.Text = "正在折叠全部..."; lblStatus.Refresh(); ExpandAll(false); }); bar.Controls.Add(btnCollapse);
-            var btnSortName = MkBtn("按名字排序", (s, e) => { lblStatus.Text = "正在按名字排序..."; lblStatus.Refresh(); SortTree((a, b) => string.Compare(a.Rel, b.Rel, StringComparison.OrdinalIgnoreCase)); });
-            bar.Controls.Add(btnSortName);
-            var btnSortSize = MkBtn("按大小排序", (s, e) => { lblStatus.Text = "正在按大小排序..."; lblStatus.Refresh(); SortTree((a, b) => b.Size.CompareTo(a.Size)); });
-            bar.Controls.Add(btnSortSize);
+            bar.Controls.Add(new Panel { Width = 1, Height = 22, BackColor = C_EDGE, Margin = new Padding(8, 1, 8, 0) });
             var btnSortRank = MkBtn("等级排序", (s, e) => { lblStatus.Text = "正在等级排序..."; lblStatus.Refresh(); SortTree((a, b) =>
             {
                 int r = CategoryRank(a).CompareTo(CategoryRank(b));
@@ -520,6 +517,11 @@ namespace FolderCleaner
                 return string.Compare(a.Rel, b.Rel, StringComparison.OrdinalIgnoreCase);
             }); });
             bar.Controls.Add(btnSortRank);
+            var btnSortName = MkBtn("按名字排序", (s, e) => { lblStatus.Text = "正在按名字排序..."; lblStatus.Refresh(); SortTree((a, b) => string.Compare(a.Rel, b.Rel, StringComparison.OrdinalIgnoreCase)); });
+            bar.Controls.Add(btnSortName);
+            var btnSortSize = MkBtn("按大小排序", (s, e) => { lblStatus.Text = "正在按大小排序..."; lblStatus.Refresh(); SortTree((a, b) => b.Size.CompareTo(a.Size)); });
+            bar.Controls.Add(btnSortSize);
+            bar.Controls.Add(new Panel { Width = 1, Height = 22, BackColor = C_EDGE, Margin = new Padding(8, 1, 8, 0) });
             rbRecycle = new RadioButton { Text = "移到回收站", Checked = true, AutoSize = true, Margin = new Padding(8, 5, 4, 0) };
             bar.Controls.Add(rbRecycle);
             rbPermanent = new RadioButton { Text = "永久删除", AutoSize = true, Margin = new Padding(0, 5, 6, 0) };
@@ -527,6 +529,7 @@ namespace FolderCleaner
             btnDelete = new Button { Text = "删除选中", AutoSize = true, BackColor = Color.FromArgb(255, 235, 238), Margin = new Padding(0, 0, 8, 0) };
             btnDelete.Click += (s, e) => DeleteSelected();
             bar.Controls.Add(btnDelete);
+            bar.Controls.Add(new Panel { Width = 1, Height = 22, BackColor = C_EDGE, Margin = new Padding(8, 1, 8, 0) });
             var btnSaveRes = new Button { Text = "保存结果", AutoSize = true, Margin = new Padding(0, 0, 8, 0) };
             btnSaveRes.Click += (s, e) => SaveResultsNow();
             bar.Controls.Add(btnSaveRes);
@@ -768,7 +771,11 @@ namespace FolderCleaner
             lblStatus.BringToFront();
             Controls.Add(treeHost);
             Controls.Add(bottom);
+            var sep1 = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = C_EDGE };
+            Controls.Add(sep1);
             Controls.Add(bar);
+            var sep2 = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = C_EDGE };
+            Controls.Add(sep2);
             Controls.Add(top);
             ApplyDarkTheme(this); // 深色主题
             treeHost.BackColor = C_EDGE; // 还原描边色（主题遍历会把 Panel 刷成窗体底色）
@@ -1701,6 +1708,7 @@ namespace FolderCleaner
                     tree.BeginUpdate();
                     foreach (var it in sel)
                     {
+                        if (fail.Contains(it.Rel)) continue; // 失败的保留节点
                         if (it.Node != null) it.Node.Remove();
                         it.Node = null;
                         it.Checked = false;
