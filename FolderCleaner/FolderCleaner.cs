@@ -1680,31 +1680,41 @@ namespace FolderCleaner
             if (sel.Count > 12) msg += "  … 等共 " + sel.Count + " 项\n";
             if (Dlg.Show(msg, "删除确认", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
-            int ok = 0; var fail = new List<string>();
-            foreach (var it in sel)
+            lblStatus.Text = "正在删除...";
+            lblStatus.Refresh();
+            Task.Run(() =>
             {
-                try
+                int ok = 0; var fail = new List<string>();
+                bool permanent = rbPermanent.Checked;
+                foreach (var it in sel)
                 {
-                    bool success = rbPermanent.Checked ? PermanentDelete(it.Path) : MoveToRecycleBin(it.Path);
-                    if (success)
+                    try
                     {
-                        ok++;
-                        tree.BeginUpdate();
+                        bool success = permanent ? PermanentDelete(it.Path) : MoveToRecycleBin(it.Path);
+                        if (success) ok++;
+                        else fail.Add(it.Rel);
+                    }
+                    catch (Exception ex) { fail.Add(it.Rel + " (" + ex.Message + ")"); }
+                }
+                SafeUi(() =>
+                {
+                    tree.BeginUpdate();
+                    foreach (var it in sel)
+                    {
                         if (it.Node != null) it.Node.Remove();
-                        tree.EndUpdate();
+                        it.Node = null;
                         it.Checked = false;
                     }
-                    else fail.Add(it.Rel);
-                }
-                catch (Exception ex) { fail.Add(it.Rel + " (" + ex.Message + ")"); }
-            }
-            UpdateSel();
-            if (fail.Count > 0)
-                Dlg.Show(string.Format("成功 {0} 项。\n失败 {1} 项：\n{2}", ok, fail.Count, string.Join("\n", fail.Take(10))),
-                    "删除结果", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            else
-                Dlg.Show("成功删除 " + ok + " 项。", "删除结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            lblStatus.Text = string.Format("删除完成：成功 {0}，失败 {1}", ok, fail.Count);
+                    tree.EndUpdate();
+                    UpdateSel();
+                    lblStatus.Text = string.Format("删除完成：成功 {0}，失败 {1}", ok, fail.Count);
+                    if (fail.Count > 0)
+                        Dlg.Show(string.Format("成功 {0} 项。\n失败 {1} 项：\n{2}", ok, fail.Count, string.Join("\n", fail.Take(10))),
+                            "删除结果", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    else
+                        Dlg.Show("成功删除 " + ok + " 项。", "删除结果", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                });
+            });
         }
 
         bool MoveToRecycleBin(string path)
